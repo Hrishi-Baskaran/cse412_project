@@ -21,7 +21,7 @@ conn = psycopg2.connect(
     port = os.getenv('DBPORT')
 )
 
-@app.route('/organization', methods=['GET', 'POST'])
+@app.route('/organization', methods=['GET', 'POST', 'DELETE', 'PUT'])
 def handle_organization():
     try:
         cur = conn.cursor()
@@ -46,6 +46,40 @@ def handle_organization():
                 conn.commit()
 
                 return 201
+            case 'DELETE':
+
+                params = []
+                conditions = []
+                org_name = request.form.get('organization_name', None)
+                profile = request.form.get('profile', None)
+                org_card = request.form.get('organization_card', None)
+                
+                if org_name is not None:
+                    conditions.append('organization_name = %s')
+                    params.append(org_name)
+                if profile is not None:
+                    conditions.append('profile = %s')
+                    params.append(profile)
+                if org_card is not None:
+                    conditions.append('organization_card = %s')
+                    params.append(org_card)
+
+                print("qurying")
+                query = "DELETE FROM organization WHERE " + " AND ".join(conditions)
+
+                if (len(params) > 0):
+                    cur.execute(query, tuple(params))
+                    cnt = cur.rowcount
+                    conn.commit()
+                    return f"Deleted {cnt} users", 200
+                else:
+                    return "No deletion criterion provided", 400
+                
+                
+
+
+                
+                
 
     except Exception as e:
         return f"Error: {e}"

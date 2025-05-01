@@ -74,6 +74,36 @@ def handle_organization():
                     return f"Deleted {cnt} users", 200
                 else:
                     return "No deletion criterion provided", 400
+            case 'PUT':
+                params = []
+                update_statements = []
+
+                org_name = request.form.get('organization_name', None)
+                profile = request.form.get('profile', None)
+                org_card = request.form.get('organization_card', None)
+
+                if org_name == None:
+                    return "Name of organization to update not specified", 400
+                
+                if profile is not None:
+                    update_statements.append('profile = %s')
+                    params.append(profile)
+                if org_card is not None:
+                    update_statements.append('organization_card = %s')
+                    params.append(org_card)
+
+                query = "UPDATE organization SET " + ", ".join(update_statements)
+
+                print(query)
+
+                if len(params) > 0:
+                    cur.execute(query, tuple(params))
+                    cnt = cur.rowcount
+                    conn.commit()
+                    return f"Updated {cnt} users", 200
+                else:
+                    return "No update values provided", 200
+
                 
                 
 
@@ -84,6 +114,8 @@ def handle_organization():
     except Exception as e:
         return f"Error: {e}"
             
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)

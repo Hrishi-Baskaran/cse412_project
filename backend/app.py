@@ -391,5 +391,337 @@ def handle_cites():
     except Exception as e:
         return f"Error: {e}"
 
+# paper endpoint
+@app.route('/paper', methods=['GET', 'POST', 'DELETE', 'PUT'])
+def handle_paper():
+    # valid columns for filtering and updates
+    valid_cols = {"paper_id", "title", "abstract", "publication_date"}
+    
+    try:
+        with conn, conn.cursor() as cur:
+            
+            # GET
+            if request.method == 'GET':
+                # collect any valid filters from the query string
+                filters = {k: v for k, v in request.args.items() if k in valid_cols}
+                
+                base_sql = 'SELECT * FROM paper'
+                if filters:
+                    # build WHERE clause
+                    clause = ' AND '.join(f"{col} = %s" for col in filters)
+                    sql_query = f"{base_sql} WHERE {clause}"
+                    cur.execute(sql_query, list(filters.values()))
+                else:
+                    # no filters, select everything
+                    cur.execute(base_sql)
+                
+                # fetch column names and rows, convert to list of dicts
+                cols = [d.name for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                return jsonify(rows), 200
+            
+            # POST
+            if request.method == 'POST':
+                data = request.get_json() or {}
+                # title is required
+                if 'title' not in data:
+                    return jsonify({'error': 'title required'}), 400
+                
+                # insert a new paper, return the new paper_id
+                cur.execute(
+                    'INSERT INTO paper '
+                    '(title, abstract, publication_date) '
+                    'VALUES (%s, %s, %s) RETURNING paper_id',
+                    (
+                        data['title'],
+                        data.get('abstract'),
+                        data.get('publication_date')
+                    )
+                )
+                pid = cur.fetchone()[0]
+                return jsonify({'paper_id': pid}), 201
+            
+            # DELETE
+            if request.method == 'DELETE':
+                data = request.get_json() or {}
+                # only keep keys we allow
+                filters = {k: v for k, v in data.items() if k in valid_cols}
+                if not filters:
+                    return jsonify({'error': 'provide at least one filter'}), 400
+                
+                # build delete clause
+                clause = ' AND '.join(f"{col} = %s" for col in filters)
+                cur.execute(
+                    f'DELETE FROM paper WHERE {clause}',
+                    list(filters.values())
+                )
+                return '', 204
+            
+            # PUT
+            if request.method == 'PUT':
+                data = request.get_json() or {}
+                # paper_id must be provided to know which row to update
+                if 'paper_id' not in data:
+                    return jsonify({'error': 'paper_id required'}), 400
+                
+                pid = data.pop('paper_id')
+                if not data:
+                    return jsonify({'error': 'no attributes to update'}), 400
+                # ensure only valid columns are being updated
+                if any(k not in valid_cols for k in data):
+                    return jsonify({'error': 'invalid column'}), 400
+                
+                # build SET clause
+                set_clause = ', '.join(f"{col} = %s" for col in data)
+                cur.execute(
+                    f'UPDATE paper SET {set_clause} WHERE paper_id = %s',
+                    list(data.values()) + [pid]
+                )
+                return '', 204
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# model endpoint
+@app.route('/model', methods=['GET', 'POST', 'DELETE', 'PUT'])
+def handle_model():
+    valid_cols = {"model_id", "model_name", "description", "parameters", "release_date"}
+    
+    try:
+        with conn, conn.cursor() as cur:
+            
+            # GET
+            if request.method == 'GET':
+                filters = {k: v for k, v in request.args.items() if k in valid_cols}
+                
+                base_sql = 'SELECT * FROM model'
+                if filters:
+                    clause = ' AND '.join(f"{col} = %s" for col in filters)
+                    sql_query = f"{base_sql} WHERE {clause}"
+                    cur.execute(sql_query, list(filters.values()))
+                else:
+                    cur.execute(base_sql)
+                
+                cols = [d.name for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                return jsonify(rows), 200
+            
+            # POST
+            if request.method == 'POST':
+                data = request.get_json() or {}
+                if 'model_name' not in data:
+                    return jsonify({'error': 'model_name required'}), 400
+                
+                cur.execute(
+                    'INSERT INTO model '
+                    '(model_name, description, parameters, release_date) '
+                    'VALUES (%s, %s, %s, %s) RETURNING model_id',
+                    (
+                        data['model_name'],
+                        data.get('description'),
+                        data.get('parameters'),
+                        data.get('release_date')
+                    )
+                )
+                mid = cur.fetchone()[0]
+                return jsonify({'model_id': mid}), 201
+            
+            # DELETE
+            if request.method == 'DELETE':
+                data = request.get_json() or {}
+                filters = {k: v for k, v in data.items() if k in valid_cols}
+                if not filters:
+                    return jsonify({'error': 'provide at least one filter'}), 400
+                
+                clause = ' AND '.join(f"{col} = %s" for col in filters)
+                cur.execute(
+                    f'DELETE FROM model WHERE {clause}',
+                    list(filters.values())
+                )
+                return '', 204
+            
+            # PUT
+            if request.method == 'PUT':
+                data = request.get_json() or {}
+                if 'model_id' not in data:
+                    return jsonify({'error': 'model_id required'}), 400
+                
+                mid = data.pop('model_id')
+                if not data:
+                    return jsonify({'error': 'no attributes to update'}), 400
+                if any(k not in valid_cols for k in data):
+                    return jsonify({'error': 'invalid column'}), 400
+                
+                set_clause = ', '.join(f"{col} = %s" for col in data)
+                cur.execute(
+                    f'UPDATE model SET {set_clause} WHERE model_id = %s',
+                    list(data.values()) + [mid]
+                )
+                return '', 204
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# dataset endpoint
+@app.route('/dataset', methods=['GET', 'POST', 'DELETE', 'PUT'])
+def handle_dataset():
+    valid_cols = {"dataset_id", "dataset_name", "description", "size", "release_date"}
+    
+    try:
+        with conn, conn.cursor() as cur:
+            
+            # GET
+            if request.method == 'GET':
+                filters = {k: v for k, v in request.args.items() if k in valid_cols}
+                
+                base_sql = 'SELECT * FROM dataset'
+                if filters:
+                    clause = ' AND '.join(f"{col} = %s" for col in filters)
+                    sql_query = f"{base_sql} WHERE {clause}"
+                    cur.execute(sql_query, list(filters.values()))
+                else:
+                    cur.execute(base_sql)
+                
+                cols = [d.name for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                return jsonify(rows), 200
+            
+            # POST
+            if request.method == 'POST':
+                data = request.get_json() or {}
+                if 'dataset_name' not in data:
+                    return jsonify({'error': 'dataset_name required'}), 400
+                
+                cur.execute(
+                    'INSERT INTO dataset '
+                    '(dataset_name, description, size, release_date) '
+                    'VALUES (%s, %s, %s, %s) RETURNING dataset_id',
+                    (
+                        data['dataset_name'],
+                        data.get('description'),
+                        data.get('size'),
+                        data.get('release_date')
+                    )
+                )
+                did = cur.fetchone()[0]
+                return jsonify({'dataset_id': did}), 201
+            
+            # DELETE
+            if request.method == 'DELETE':
+                data = request.get_json() or {}
+                filters = {k: v for k, v in data.items() if k in valid_cols}
+                if not filters:
+                    return jsonify({'error': 'provide at least one filter'}), 400
+                
+                clause = ' AND '.join(f"{col} = %s" for col in filters)
+                cur.execute(
+                    f'DELETE FROM dataset WHERE {clause}',
+                    list(filters.values())
+                )
+                return '', 204
+            
+            # PUT
+            if request.method == 'PUT':
+                data = request.get_json() or {}
+                if 'dataset_id' not in data:
+                    return jsonify({'error': 'dataset_id required'}), 400
+                
+                did = data.pop('dataset_id')
+                if not data:
+                    return jsonify({'error': 'no attributes to update'}), 400
+                if any(k not in valid_cols for k in data):
+                    return jsonify({'error': 'invalid column'}), 400
+                
+                set_clause = ', '.join(f"{col} = %s" for col in data)
+                cur.execute(
+                    f'UPDATE dataset SET {set_clause} WHERE dataset_id = %s',
+                    list(data.values()) + [did]
+                )
+                return '', 204
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# cities endpoint
+@app.route('/cities', methods=['GET', 'POST', 'DELETE', 'PUT'])
+def handle_cities():
+    valid_cols = {"city_id", "city_name", "country", "latitude", "longitude", "population"}
+    
+    try:
+        with conn, conn.cursor() as cur:
+            
+            # GET
+            if request.method == 'GET':
+                filters = {k: v for k, v in request.args.items() if k in valid_cols}
+                
+                base_sql = 'SELECT * FROM cities'
+                if filters:
+                    clause = ' AND '.join(f"{col} = %s" for col in filters)
+                    sql_query = f"{base_sql} WHERE {clause}"
+                    cur.execute(sql_query, list(filters.values()))
+                else:
+                    cur.execute(base_sql)
+                
+                cols = [d.name for d in cur.description]
+                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+                return jsonify(rows), 200
+            
+            # POST
+            if request.method == 'POST':
+                data = request.get_json() or {}
+                if 'city_name' not in data or 'country' not in data:
+                    return jsonify({'error': 'city_name and country required'}), 400
+                
+                cur.execute(
+                    'INSERT INTO cities '
+                    '(city_name, country, latitude, longitude, population) '
+                    'VALUES (%s, %s, %s, %s, %s) RETURNING city_id',
+                    (
+                        data['city_name'],
+                        data['country'],
+                        data.get('latitude'),
+                        data.get('longitude'),
+                        data.get('population')
+                    )
+                )
+                cid = cur.fetchone()[0]
+                return jsonify({'city_id': cid}), 201
+            
+            # DELETE
+            if request.method == 'DELETE':
+                data = request.get_json() or {}
+                filters = {k: v for k, v in data.items() if k in valid_cols}
+                if not filters:
+                    return jsonify({'error': 'provide at least one filter'}), 400
+                
+                clause = ' AND '.join(f"{col} = %s" for col in filters)
+                cur.execute(
+                    f'DELETE FROM cities WHERE {clause}',
+                    list(filters.values())
+                )
+                return '', 204
+            
+            # PUT
+            if request.method == 'PUT':
+                data = request.get_json() or {}
+                if 'city_id' not in data:
+                    return jsonify({'error': 'city_id required'}), 400
+                
+                cid = data.pop('city_id')
+                if not data:
+                    return jsonify({'error': 'no attributes to update'}), 400
+                if any(k not in valid_cols for k in data):
+                    return jsonify({'error': 'invalid column'}), 400
+                
+                set_clause = ', '.join(f"{col} = %s" for col in data)
+                cur.execute(
+                    f'UPDATE cities SET {set_clause} WHERE city_id = %s',
+                    list(data.values()) + [cid]
+                )
+                return '', 204
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True)

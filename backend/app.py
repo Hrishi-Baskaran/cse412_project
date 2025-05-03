@@ -1,10 +1,12 @@
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
+from flask_cors import CORS 
+
 import os
 import psycopg2
 
 app = Flask(__name__)
-
+CORS(app)
 # Loads the environment variabls you should declare in ./.env
 # That file is ignored by Git so you can put user-specific or sensitive data there
 load_dotenv()
@@ -42,17 +44,25 @@ def handle_organization():
                 
                 return jsonify(result), 200
             case 'POST':
-                cur.execute(f"INSERT INTO organization VALUES ('{request.form['organization_name']}', '{request.form['profile']}', '{request.form['organization_card']}')")
+                org_name = request.form['organization_name']
+                # check if organization already exists in database
+                cur.execute("SELECT * FROM organization WHERE organization_name = %s", (org_name,))
+                if cur.fetchone():
+                    return jsonify({"error": "Organization already exists"}), 409  # Conflict
+                cur.execute(
+                    "INSERT INTO organization VALUES (%s, %s, %s)",
+                    (org_name, request.form['profile'], request.form['organization_card'])
+                )
                 conn.commit()
-
-                return 201
+                return jsonify({"message": "Organization created successfully"}), 201
             case 'DELETE':
-
+                data = request.get_json() or {}
                 params = []
                 conditions = []
-                paper_id = request.form.get('organization_name', None)
-                profile = request.form.get('profile', None)
-                org_card = request.form.get('organization_card', None)
+
+                paper_id = data.get('organization_name', None)
+                profile = data.get('profile', None)
+                org_card = data.get('organization_card', None)
                 
                 if paper_id is not None:
                     conditions.append('organization_name = %s')
@@ -64,27 +74,27 @@ def handle_organization():
                     conditions.append('organization_card = %s')
                     params.append(org_card)
 
-                print("qurying")
-                query = "DELETE FROM organization WHERE " + " AND ".join(conditions)
-
-                if (len(params) > 0):
+                if len(params) > 0:
+                    query = "DELETE FROM organization WHERE " + " AND ".join(conditions)
                     cur.execute(query, tuple(params))
                     cnt = cur.rowcount
                     conn.commit()
-                    return f"Deleted {cnt} users", 200
+                    return jsonify({'message': f'Deleted {cnt} organization(s)'}), 200
                 else:
-                    return "No deletion criterion provided", 400
+                    return jsonify({'error': 'No deletion criterion provided'}), 400
+
             case 'PUT':
+                data = request.get_json() or {}
                 params = []
                 update_statements = []
 
-                paper_id = request.form.get('organization_name', None)
-                profile = request.form.get('profile', None)
-                org_card = request.form.get('organization_card', None)
+                org_name = data.get('organization_name', None)
+                profile = data.get('profile', None)
+                org_card = data.get('organization_card', None)
 
-                if paper_id == None:
-                    return "Name of organization to update not specified", 400
-                
+                if org_name is None:
+                    return jsonify({'error': 'organization_name is required to identify the record to update'}), 400
+
                 if profile is not None:
                     update_statements.append('profile = %s')
                     params.append(profile)
@@ -92,17 +102,21 @@ def handle_organization():
                     update_statements.append('organization_card = %s')
                     params.append(org_card)
 
-                query = "UPDATE organization SET " + ", ".join(update_statements)
+                if not update_statements:
+                    return jsonify({'error': 'No update values provided'}), 400
 
-                print(query)
+                query = "UPDATE organization SET " + ", ".join(update_statements) + " WHERE organization_name = %s"
+                params.append(org_name)
 
-                if len(params) > 0:
-                    cur.execute(query, tuple(params))
-                    cnt = cur.rowcount
-                    conn.commit()
-                    return f"Updated {cnt} users", 200
-                else:
-                    return "No update values provided", 200
+                cur.execute(query, tuple(params))
+                conn.commit()
+                cnt = cur.rowcount
+
+                if cnt == 0:
+                    return jsonify({'error': 'No organization found with that name'}), 404
+
+                return jsonify({'message': f'Updated {cnt} organization(s)'}), 200
+
 
                 
                 
@@ -118,7 +132,7 @@ def handle_organization():
 @app.route('/person', methods=['GET', 'POST', 'DELETE', 'PUT'])
 def handle_person():
     # only these columns can be used as filters or in updates
-    valid_cols = {"person_id", "huggingface_username", "github_link"}
+    valid_cols = {"person_id", "huggingface_username", "github_link", "person_description"}
 
     try:
         with conn, conn.cursor() as cur:
@@ -146,31 +160,32 @@ def handle_person():
             # POST
             if request.method == 'POST':
                 data = request.get_json() or {}
+                required_fields = {'person_id', 'huggingface_username'}
                 # huggingface_username is required
-                if 'huggingface_username' not in data:
-                    return jsonify({'error': 'huggingface_username required'}), 400
+                if any(field not in data for field in required_fields):
+                    return jsonify({'error': 'person_id and huggingface_username required'}), 400
 
                 # insert a new person, return the new person_id
                 cur.execute(
-                    'INSERT INTO person '
-                    '(huggingface_username, person_description, github_link) '
-                    'VALUES (%s, %s, %s) RETURNING person_id',
+                    'INSERT INTO person (person_id, huggingface_username, person_description, github_link) '
+                    'VALUES (%s, %s, %s, %s)',
                     (
+                        data['person_id'],
                         data['huggingface_username'],
                         data.get('person_description'),
                         data.get('github_link')
                     )
                 )
-                pid = cur.fetchone()[0]
-                return jsonify({'person_id': pid}), 201
+                conn.commit()
+                return jsonify({'message': 'person inserted successfully'}), 201
 
             # DELETE
             if request.method == 'DELETE':
                 data = request.get_json() or {}
                 # only keep keys we allow
                 filters = {k: v for k, v in data.items() if k in valid_cols}
-                if not filters:
-                    return jsonify({'error': 'provide at least one filter'}), 400
+                if 'person_id' not in filters:
+                    return jsonify({'error': 'person_id is required to delete'}), 400
 
                 # build delete clause
                 clause = ' AND '.join(f"{col} = %s" for col in filters)

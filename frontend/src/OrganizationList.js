@@ -18,7 +18,7 @@ function OrganizationList() {
       .catch(error => console.error("Error fetching organizations:", error));
   };
 
-  useEffect(() => {
+  useEffect(() => { 
     fetchOrganizations();
   }, []);
 

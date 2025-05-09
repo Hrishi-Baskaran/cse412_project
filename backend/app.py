@@ -445,16 +445,16 @@ def handle_paper():
                 # insert a new paper, return the new paper_id
                 cur.execute(
                     'INSERT INTO paper '
-                    '(title, abstract, publication_date) '
-                    'VALUES (%s, %s, %s) RETURNING paper_id',
-                    (
+                    '(paper_id, title, abstract, publication_date) '
+                    'VALUES (%s, %s, %s, %s)',
+                    (   
+                        data['paper_id'],
                         data['title'],
                         data.get('abstract'),
                         data.get('publication_date')
                     )
                 )
-                pid = cur.fetchone()[0]
-                return jsonify({'paper_id': pid}), 201
+                return '', 201
             
             # DELETE
             if request.method == 'DELETE':
